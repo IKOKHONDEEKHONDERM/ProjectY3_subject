@@ -1,3 +1,4 @@
+from asyncio import FastChildWatcher
 import pygame
 import cv2 
 import mediapipe as mp
@@ -36,7 +37,7 @@ def draw_button(screen, text, x, y, width, height, color, text_color):
                                y + (height - text_surface.get_height()) // 2))
     return button_rect
 
-# ฟังก์ชันตรวจจับการยกแขนขึ้น
+# ยกแขนขึ้น
 def is_raising_hand(landmarks):
     if landmarks and landmarks.landmark:
         right_shoulder = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
@@ -44,6 +45,7 @@ def is_raising_hand(landmarks):
         return right_wrist.y < right_shoulder.y
     return False
 
+# แตะไหล่
 def is_touching_shoulders(landmarks):
     if landmarks and landmarks.landmark:
         right_wrist = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_WRIST]
@@ -60,91 +62,98 @@ def is_touching_shoulders(landmarks):
         )
     return False
 
-def is_raising_left_hand(landmarks):
-    if landmarks and landmarks.landmark:
-        left_shoulder = landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
-        left_wrist = landmarks.landmark[mp_pose.PoseLandmark.LEFT_WRIST]
-        # เช็คว่ามือซ้ายอยู่สูงกว่าไหล่ซ้าย
-        return left_wrist.y < left_shoulder.y
-    return False
-
+# ไขว้แขน
 def is_crossing_arms(landmarks):
     if landmarks and landmarks.landmark:
-        right_wrist = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_WRIST]
         left_wrist = landmarks.landmark[mp_pose.PoseLandmark.LEFT_WRIST]
-        right_shoulder = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+        right_wrist = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_WRIST]
         left_shoulder = landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        right_shoulder = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
 
-        # ตรวจสอบว่าข้อมือซ้ายและขวาอยู่ใกล้กันบริเวณกลางลำตัว
+        # ตรวจสอบว่าข้อมือซ้ายอยู่ใกล้ไหล่ขวา และข้อมือขวาอยู่ใกล้ไหล่ซ้าย
         return (
-            abs(right_wrist.x - left_wrist.x) < 0.1 and  # ระยะห่างแกน X น้อย
-            right_wrist.y > left_shoulder.y and          # ข้อมือขวาอยู่ใต้ไหล่ซ้าย
-            left_wrist.y > right_shoulder.y             # ข้อมือซ้ายอยู่ใต้ไหล่ขวา
+            abs(left_wrist.x - right_shoulder.x) < 0.1 and
+            abs(right_wrist.x - left_shoulder.x) < 0.1 and
+            abs(left_wrist.y - right_shoulder.y) < 0.1 and
+            abs(right_wrist.y - left_shoulder.y) < 0.1
         )
     return False
 
-def is_hands_on_hips_and_legs_apart(landmarks):
+# มือแตะเข่า
+def is_hands_on_knees(landmarks):
     if landmarks and landmarks.landmark:
-        # จุดที่ต้องการ
         right_wrist = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_WRIST]
         left_wrist = landmarks.landmark[mp_pose.PoseLandmark.LEFT_WRIST]
-        right_hip = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_HIP]
-        left_hip = landmarks.landmark[mp_pose.PoseLandmark.LEFT_HIP]
         right_knee = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_KNEE]
         left_knee = landmarks.landmark[mp_pose.PoseLandmark.LEFT_KNEE]
-        right_shoulder = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-        left_shoulder = landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
 
-        # เงื่อนไขการเท้าเอว
-        hands_on_hips = (
-            abs(right_wrist.x - right_hip.x) < 0.1 and
-            abs(left_wrist.x - left_hip.x) < 0.1 and
-            right_wrist.y > right_shoulder.y and
-            left_wrist.y > left_shoulder.y
+        # มือทั้งสองอยู่ใกล้เข่า
+        return (
+            abs(right_wrist.y - right_knee.y) < 0.1 and
+            abs(left_wrist.y - left_knee.y) < 0.1
         )
-
-        # เงื่อนไขการกางขา
-        legs_apart = abs(right_knee.x - left_knee.x) > 0.4  # ระยะห่างเข่าขึ้นอยู่กับภาพจริง
-
-        return hands_on_hips and legs_apart
     return False
 
-# ฟังก์ชันเล่นเสียงค้างไว้
-def play_beep():
+def is_tree_pose(landmarks):
+    if landmarks and landmarks.landmark:
+        left_ankle = landmarks.landmark[mp_pose.PoseLandmark.LEFT_ANKLE]
+        right_ankle = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_ANKLE]
+        left_knee = landmarks.landmark[mp_pose.PoseLandmark.LEFT_KNEE]
+        right_knee = landmarks.landmark[mp_pose.PoseLandmark.RIGHT_KNEE]
+
+        # ข้อเท้าขวาใกล้เข่าซ้าย หรือข้อเท้าซ้ายใกล้เข่าขวา
+        return (
+            abs(left_ankle.x - right_knee.x) < 0.1 and abs(left_ankle.y - right_knee.y) < 0.1 or
+            abs(right_ankle.x - left_knee.x) < 0.1 and abs(right_ankle.y - left_knee.y) < 0.1
+        )
+    return False
+
+# ฟังก์ชันเล่นเสียง
+def play_C():   #เสียงโด
     while hand_raised:
         pygame.mixer.init()
-        pygame.mixer.music.load("D:\WORK\Year-3-2\design\do.wav")  # ใส่ path ไฟล์เสียงของคุณ
+        pygame.mixer.music.load("/Users/parichaya23icloud.com/Desktop/AI/316899__jaz_the_man_2__do-stretched.wav")  # ใส่ path ไฟล์เสียงของคุณ
         pygame.mixer.music.play()
-        pygame.time.wait(1000)
-
-def play_r():
-    while hand_raised:
+        pygame.time.wait(2000)
+def play_D():   # เสียงเร
+    while shoulders_touched:
         pygame.mixer.init()
-        pygame.mixer.music.load("D:\WORK\Year-3-2\design\RE.wav")  # ใส่ path ไฟล์เสียงของคุณ
+        pygame.mixer.music.load("/Users/parichaya23icloud.com/Desktop/AI/316909__jaz_the_man_2__re-stretched.wav")  # ใส่ path ไฟล์เสียงของคุณ
         pygame.mixer.music.play()
-        pygame.time.wait(1000)
+        pygame.time.wait(2000)
 
-def play_MI():
-    while arms_crossed:
+def play_E():   # เสียงมี
+    while cross_arm:
         pygame.mixer.init()
-        pygame.mixer.music.load("D:\WORK\Year-3-2\design\MI.wav")  # ใส่ path ไฟล์เสียงของคุณ
+        pygame.mixer.music.load("/Users/parichaya23icloud.com/Desktop/AI/316907__jaz_the_man_2__mi-stretched.wav")  # ใส่ path ไฟล์เสียงของคุณ
         pygame.mixer.music.play()
-        pygame.time.wait(1000) 
+        pygame.time.wait(2000)
 
-def play_sound_hands_hips_legs_apart():
-    while hands_hips_legs_apart:
+def play_G():   # เสียงโซ
+    while hands_on_knees:
         pygame.mixer.init()
-        pygame.mixer.music.load("D:\WORK\Year-3-2\design\FA.wav")  # ใส่ path ไฟล์เสียง FA ของคุณ
+        pygame.mixer.music.load("/Users/parichaya23icloud.com/Desktop/AI/316911__jaz_the_man_2__sol-stretched.wav")  # ใส่ path ไฟล์เสียงของคุณ
         pygame.mixer.music.play()
-        pygame.time.wait(1000)  # รอ 1 วินาที
+        pygame.time.wait(2000)
+
+def play_T():   # เสียงที
+    while on_one_leg:
+        pygame.mixer.init()
+        pygame.mixer.music.load("//Users/parichaya23icloud.com/Desktop/AI/316910__jaz_the_man_2__si-stretched.wav")  # ใส่ path ไฟล์เสียงของคุณ
+        pygame.mixer.music.play()
+        pygame.time.wait(2000)
+
 
 
 # สถานะการทำงานของกล้อง
 camera_active = False
 hand_raised = False
-jumping_jack_detected = False
-
+shoulders_touched = False
+cross_arm = False
+hands_on_knees = False
+on_one_leg = False
 running = True
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:  # ปิดโปรแกรม
@@ -175,40 +184,47 @@ while running:
                 if is_raising_hand(results.pose_landmarks):
                     if not hand_raised:
                         hand_raised = True
-                        threading.Thread(target=play_beep, daemon=True).start()
+                        print("Hand raised!")
+                        threading.Thread(target=play_C, daemon=True).start()
                 else:
                     hand_raised = False
-                
-                arms_crossed = False
 
-# ในลูป while หลัก
-                if is_crossing_arms(results.pose_landmarks):
-                    if not arms_crossed:
-                        arms_crossed = True
-                        print("Cross Arms detected!")
-                        threading.Thread(target=play_MI, daemon=True).start()
-                else:
-                    arms_crossed = False
-
-                hands_hips_legs_apart = False
-
-# ในลูป while หลัก
-                if is_hands_on_hips_and_legs_apart(results.pose_landmarks):
-                    if not hands_hips_legs_apart:
-                        hands_hips_legs_apart = True
-                        print("Hands on hips and legs apart detected!")
-                        threading.Thread(target=play_sound_hands_hips_legs_apart, daemon=True).start()
-                else:
-                    hands_hips_legs_apart = False
-
-
+                # ตรวจจับการแตะไหล่
                 if is_touching_shoulders(results.pose_landmarks):
                     if not shoulders_touched:
                         shoulders_touched = True
                         print("Shoulders touched!")
-                        threading.Thread(target=play_r, daemon=True).start()
+                        threading.Thread(target=play_D, daemon=True).start()
                 else:
                     shoulders_touched = False
+                
+                # ตรวจจับการไขว้แขน
+                if is_crossing_arms(results.pose_landmarks):
+                    if not cross_arm:
+                        cross_arm = True
+                        print("Crossing arm!")
+                        threading.Thread(target=play_E, daemon=True).start()
+                else:
+                    cross_arm = False
+                
+                # มือแตะเข่า
+                if is_hands_on_knees(results.pose_landmarks):
+                    if not hands_on_knees:
+                        hands_on_knees = True
+                        print("Hand on knees!")
+                        threading.Thread(target=play_G, daemon=True).start()
+                else:
+                    hands_on_knees = False
+
+                # ยืนขาข้างเดียว
+                if is_tree_pose(results.pose_landmarks):
+                    if not on_one_leg:
+                        n_one_leg = True
+                        print("Tree pose!")
+                        threading.Thread(target=play_T, daemon=True).start()
+                else:
+                    n_one_leg = False
+                
 
             # แปลงภาพ BGR -> RGB -> Surface (สำหรับแสดงใน Pygame)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
